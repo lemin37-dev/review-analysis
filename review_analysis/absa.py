@@ -21,15 +21,34 @@ ASPECTS = [a for a, _ in ASPECT_DEFS]
 SERVICE = [a for a, k in ASPECT_DEFS if k == '서비스']
 SENTS = ('긍정', '부정', '중립')
 OUT = C.OUT_DIR / 'absa_pilot'
-VERSION = 'v1'   # 프롬프트/가이드가 바뀌면 올려서 캐시를 분리한다 (v0 = 가이드 확정 전 시험)
+SYNTH_VERSION = 'v1'   # 합성 리뷰 생성 프롬프트 버전 (추출 프롬프트 VERSION과 별개. 생성 프롬프트가 바뀔 때만 올린다)
+VERSION = 'v2'   # 프롬프트/가이드가 바뀌면 올려서 캐시를 분리한다 (v0 = 가이드 확정 전, v1 = 1차 확정, v2 = 번호 규칙 R1~R21)
 
-PROMPT = (
-    '다음은 의류·패션 상품 리뷰 목록입니다(영어 또는 한국어). 각 리뷰에서 아래 속성 중 리뷰가 실제로 언급한 속성만 골라 속성별 감성을 판단하세요.\n'
-    f'속성 목록: {", ".join(ASPECTS)}\n'
-    '규칙: 리뷰가 그 속성을 평가한 경우에만 출력하세요. 평가 표현 없이 사실만 적은 경우(예: "택배 박스에 담겨 왔다")는 언급하지 않은 것으로 보고 출력하지 마세요. '
-    '감성은 "긍정"(분명한 만족), "부정"(분명한 불만), "중립"(보통/무난/그저 그렇다고 평가했거나 장단점이 같은 비중으로 섞임) 중 하나입니다. '
-    '한 속성에 긍정과 부정이 섞이면 전체 뉘앙스로, 반어는 실제 뜻으로 판단하세요. 속성 목록에 없는 내용은 무시하세요.\n'
-    '출력: [{"id": 번호, "aspects": [{"aspect": "속성", "sentiment": "감성"}]}] 형식의 JSON 배열만 출력하세요.\n\n입력:\n')
+_PROMPT_LINES = [
+    '다음은 의류·패션 상품 리뷰 목록입니다(영어 또는 한국어). 각 리뷰에서 아래 속성 중 리뷰가 실제로 평가한 속성만 골라 속성별 감성을 판단하세요.',
+    f'속성 목록: {", ".join(ASPECTS)}',
+    '속성 배정 규칙:',
+    '- 재질·촉감: 두께감, 도톰/얇음, 비침, 보온, 까끌/부드러움',
+    '- 사이즈·핏: 길이, 기장, 총장, 소매, 품, 핏, 크롭, 오버핏, 크다/작다/끼다',
+    '- 색상·디자인: 색상, 워싱, 디자인, 스타일, 사진과 색 차이',
+    '- 품질·내구성: 실밥, 먼지·보풀, 올 풀림, 지퍼·단추·바느질·마감, 튼튼함, 이염·물빠짐·물듦',
+    '- 세탁·관리: 세탁 후 줄어듦·늘어남·구김·변형, 세탁·건조 관리 편의 (이염·물빠짐은 품질·내구성)',
+    '- 가격·가성비: 가격 대비 만족/불만. "가격 대비 품질이 좋다"처럼 품질도 평가했으면 가격·가성비와 품질·내구성 둘 다',
+    '- 배송: 택배 속도·배송 중 문제 / 포장: 박스·비닐·구김·오염 / 교환·환불·CS: 문의·응대·반품·교환 처리',
+    '미언급 규칙(해당하면 그 속성을 출력하지 마세요):',
+    '- 평가 표현 없이 사실만 적은 경우(예: "택배 박스에 담겨 왔다")',
+    '- 코디·조합 이야기(예: "이 옷이랑 맞춰 입을 게 없다")는 어떤 속성도 아닙니다',
+    '- 추측·가정·조언("~할 것 같아요", "~일 수도 있어요", "~하세요")은 실제 경험이 아니므로 그 속성을 출력하지 마세요. 실제 경험이 함께 있으면 그 경험으로 판단하세요',
+    '- 과거나 다른 구매 경험은 제외하고 이번 구매 평가만 보세요',
+    '- "다른 거 사세요", "강추" 같은 추천 문구는 속성이 아닙니다. 리뷰가 말하지 않은 속성을 추론하지 마세요',
+    '감성 규칙: "긍정"(분명한 만족), "부정"(분명한 불만), "중립"(보통/무난/그저 그렇다고 평가했거나, 같은 속성 안에 불만과 만족이 모두 있음). '
+    '한쪽만 있으면 그쪽(예: "크긴 해요"만 있으면 부정, 의도한 오버핏이라 만족하면 긍정). 기대와 달라도 최종적으로 마음에 든다고 하면 긍정입니다. '
+    '반어는 실제 뜻으로, "나쁘지 않아요"는 약한 긍정(확실하지 않으면 중립)으로 판단하세요. 한 속성은 한 번만 출력하세요.',
+    '출력: [{"id": 번호, "aspects": [{"aspect": "속성", "sentiment": "감성"}]}] 형식의 JSON 배열만 출력하세요.',
+    '',
+    '입력:',
+]
+PROMPT = chr(10).join(_PROMPT_LINES) + chr(10)
 
 
 def _parse(got):
@@ -117,7 +136,7 @@ def make_specs(n, seed=C.SEED, service_ratio=0.45):
 
 def synth_reviews(n=200, batch=10):
     """Gemini로 한글 합성 리뷰를 만들고 정답과 함께 저장한다. (같은 모델이 쓰고 읽으므로 정확도는 낙관적이다)"""
-    path = OUT / f'synth_ko.{VERSION}.json'
+    path = OUT / f'synth_ko.{SYNTH_VERSION}.json'
     if path.exists():
         saved = json.loads(path.read_text(encoding='utf-8'))
         if len(saved) == n:
@@ -148,11 +167,16 @@ def validate_synth(data):
     return data, gold, pred, clean, queue
 
 
-def score_eval_csv(path):
+def score_eval_csv(path, return_rows=False):
     """사람이 작성한 평가셋 CSV(긴 형식: review_id,text,aspect,sentiment,annotator,note)를 Gemini 추출과 비교한다.
     annotator가 둘 이상이면 첫 번째를 정답으로 쓰고 둘 사이 일치도도 보고한다. 예시 행(annotator=예시)은 제외한다."""
     df = pd.read_csv(path, encoding='utf-8-sig')
-    df = df[df['annotator'].astype(str) != '예시'].dropna(subset=['aspect', 'sentiment'])
+    # annotator 칸을 비워 둔 경우도 허용한다 (pandas 3에서는 빈 칸이 'nan' 문자열이 아니라 결측값이라 따로 채워야 한다)
+    df['annotator'] = df['annotator'].fillna('라벨러1').astype(str).str.strip().replace('', '라벨러1')
+    df['review_id'] = df['review_id'].astype(str).str.strip()
+    df['aspect'] = df['aspect'].astype('string').str.strip()
+    df['sentiment'] = df['sentiment'].astype('string').str.strip()
+    df = df[df['annotator'] != '예시'].dropna(subset=['aspect', 'sentiment'])
     assert len(df), '평가 행이 없습니다. 템플릿의 예시 행은 제외됩니다.'
     bad = df[~df['aspect'].isin(ASPECTS) | ~df['sentiment'].isin(SENTS)]
     assert bad.empty, f'속성/감성 값이 목록에 없는 행이 있습니다: {bad.head().to_dict("records")}'
@@ -165,10 +189,35 @@ def score_eval_csv(path):
         return [{r.aspect: r.sentiment for r in sub[sub['review_id'].astype(str) == i].itertuples()} for i in ids]
 
     gold = gold_of(annotators[0])
-    pred = extract(f'human_eval_{len(ids)}', [text[i] for i in ids])
+    import hashlib   # 같은 건수라도 리뷰 문구를 고치면 캐시를 쓰지 않도록 문구의 해시를 이름에 넣는다
+    texts = [text[i] for i in ids]
+    h = hashlib.sha1('|'.join(texts).encode('utf-8')).hexdigest()[:8]
+    pred = extract(f'human_eval_{len(ids)}_{h}', texts)
     rep = dict(전체=compare(gold, pred), 속성별=per_aspect(gold, pred))
     if len(annotators) > 1:
         rep['라벨러간_일치'] = compare(gold, gold_of(annotators[1]))
     dis = [dict(review_id=i, text=text[i], 사람=json.dumps(g, ensure_ascii=False), 모델=json.dumps(p, ensure_ascii=False))
            for i, g, p in zip(ids, gold, pred) if g != p]
+    if return_rows:   # 화면 표시용: 리뷰별 원문·사람 라벨·모델 라벨 (원문이 들어 있으니 내부용으로만 쓴다)
+        rows = [dict(review_id=i, text=text[i], gold=g, pred=p) for i, g, p in zip(ids, gold, pred)]
+        return rep, pd.DataFrame(dis), rows
     return rep, pd.DataFrame(dis)
+
+
+def load_eval_gold(path):
+    """평가셋 CSV에서 (리뷰 ID 목록, 원문 목록, 사람 라벨 목록)만 읽는다. Gemini를 부르지 않는다(외부 전송 없음).
+    annotator가 여럿이면 첫 번째 라벨러를 정답으로 쓴다."""
+    df = pd.read_csv(path, encoding='utf-8-sig')
+    df['annotator'] = df['annotator'].fillna('라벨러1').astype(str).str.strip().replace('', '라벨러1')
+    df['review_id'] = df['review_id'].astype(str).str.strip()
+    df['aspect'] = df['aspect'].astype('string').str.strip()
+    df['sentiment'] = df['sentiment'].astype('string').str.strip()
+    df = df[df['annotator'] != '예시'].dropna(subset=['aspect', 'sentiment'])
+    assert len(df), '평가 행이 없습니다.'
+    bad = df[~df['aspect'].isin(ASPECTS) | ~df['sentiment'].isin(SENTS)]
+    assert bad.empty, f'속성/감성 값이 목록에 없는 행이 있습니다: {bad.head().to_dict("records")}'
+    first = df[df['annotator'] == df['annotator'].iloc[0]]
+    ids = list(dict.fromkeys(df['review_id']))
+    text = df.drop_duplicates('review_id').set_index('review_id')['text']
+    gold = [{r.aspect: r.sentiment for r in first[first['review_id'] == i].itertuples()} for i in ids]
+    return ids, [text[i] for i in ids], gold

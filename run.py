@@ -178,7 +178,8 @@ def cmd_absa(a):
         rep, dis = A.score_eval_csv(a.csv)
         for k, v in rep.items():
             print(f'[{k}]'); print(v if isinstance(v, dict) else v.to_string())
-        out = A.OUT / f'human_eval_disagreements.{A.VERSION}.csv'
+        out = C.ROOT / 'private' / f'human_eval_disagreements.{A.VERSION}.csv'   # 실제 후기가 들어 있어 private/에만 둔다
+        out.parent.mkdir(exist_ok=True)
         dis.to_csv(out, index=False, encoding='utf-8-sig')
         print('사람과 모델이 다른 리뷰:', len(dis), '→', out)
 
@@ -199,13 +200,37 @@ def cmd_absa_train(a):
         train += list(zip(en['src_en'].tolist(), lab))
     print(f'학습 {len(train)} / 검증 {len(val)} / 테스트(한글 합성) {len(test)}')
     rep, model, tok = train_absa(train, val, test, model_name=a.model_name, epochs=a.epochs)
+    print('[한글 합성 test]')
     for k, v in rep.items():
         print(f'[{k}]'); print(v if isinstance(v, dict) else v.to_string())
+    record = dict(시각=pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'), 모델=a.model_name, 합성생성=a.n, 영어추가=a.en, 에폭=a.epochs,
+                  학습건수=len(train), 합성test건수=len(test), 합성test=rep['전체'],
+                  합성test_속성별=json.loads(rep['속성별'].to_json(orient='index', force_ascii=False)))
+    if a.human:   # 사람이 라벨한 평가셋(내부용)으로 평가. Gemini를 부르지 않고 이 PC 안에서만 계산한다
+        from review_analysis.absa_train import predict
+        ids, texts, hgold = A.load_eval_gold(C.ROOT / 'private' / 'absa_eval_human_real.csv')
+        hpred = predict(model, tok, texts)
+        print(f'[사람 평가셋 {len(ids)}건 — 작은 모델]')
+        print(A.compare(hgold, hpred)); print(A.per_aspect(hgold, hpred).to_string())
+        record['사람평가셋건수'] = len(ids)
+        record['사람평가셋_작은모델'] = A.compare(hgold, hpred)
+        record['사람평가셋_작은모델_속성별'] = json.loads(A.per_aspect(hgold, hpred).to_json(orient='index', force_ascii=False))
+        try:   # 같은 평가셋에서 Gemini 결과를 비교용으로 함께 저장 (문구가 그대로면 캐시를 써서 외부 전송이 없다)
+            record['사람평가셋_Gemini'] = A.score_eval_csv(C.ROOT / 'private' / 'absa_eval_human_real.csv')[0]['전체']
+        except Exception as e:
+            print('[Gemini 비교 생략]', repr(e)[:120])
+    path = A.OUT / 'small_model_runs.json'
+    runs = json.loads(path.read_text(encoding='utf-8')) if path.exists() else []
+    runs.append(record)
+    path.write_text(json.dumps(runs, ensure_ascii=False, indent=1), encoding='utf-8')
+    print('결과 저장:', path)
 
 
 def cmd_overview(a):
     from review_analysis.overview import build
-    print('전체 결과 화면:', build())
+    print('전체 결과 화면(원문 없음):', build())
+    if a.internal:
+        print('내부용 화면(사람 평가셋 원문 포함):', build(internal=True))
 
 
 def main():
@@ -220,9 +245,9 @@ def main():
     p = sub.add_parser('train'); p.set_defaults(f=cmd_train)
     p.add_argument('--only', nargs='*'); p.add_argument('--mt'); p.add_argument('--limit', type=int)
     p = sub.add_parser('report'); p.set_defaults(f=cmd_report); p.add_argument('--mt')
-    sub.add_parser('overview').set_defaults(f=cmd_overview)
-    p = sub.add_parser('absa-train'); p.set_defaults(f=cmd_absa_train); p.add_argument('--n', type=int, default=300); p.add_argument('--en', type=int, default=0); p.add_argument('--model-name', default='klue/roberta-base'); p.add_argument('--epochs', type=int, default=5)
-    p = sub.add_parser('absa'); p.set_defaults(f=cmd_absa); p.add_argument('what', choices=['lang', 'rerun', 'synth', 'eval']); p.add_argument('--n', type=int, default=300); p.add_argument('--csv', default='docs/absa_eval_template.csv')
+    p = sub.add_parser('overview'); p.set_defaults(f=cmd_overview); p.add_argument('--internal', action='store_true', help='사람 평가셋 원문이 들어간 내부용 화면을 private/에 추가로 만든다')
+    p = sub.add_parser('absa-train'); p.set_defaults(f=cmd_absa_train); p.add_argument('--n', type=int, default=300); p.add_argument('--en', type=int, default=0); p.add_argument('--model-name', default='klue/roberta-base'); p.add_argument('--epochs', type=int, default=10); p.add_argument('--human', action='store_true', help='private/의 사람 평가셋으로도 평가 (로컬 계산, 외부 전송 없음)')
+    p = sub.add_parser('absa'); p.set_defaults(f=cmd_absa); p.add_argument('what', choices=['lang', 'rerun', 'synth', 'eval']); p.add_argument('--n', type=int, default=300); p.add_argument('--csv', default='private/absa_eval_human_real.csv')
     a = ap.parse_args()
     a.f(a)
 

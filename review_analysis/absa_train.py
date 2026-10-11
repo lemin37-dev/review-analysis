@@ -58,7 +58,7 @@ def predict(model, tok, texts, bs=64):
     return [from_labels(ids) for ids in out]
 
 
-def train_absa(train, val, test, model_name='klue/roberta-base', epochs=5, lr=3e-5, bs=16, seed=C.SEED):
+def train_absa(train, val, test, model_name='klue/roberta-base', epochs=10, lr=5e-5, bs=16, seed=C.SEED):
     """train/val/test: [(text, {속성: 감성})]. 검증 탐지 F1이 가장 좋은 에폭의 가중치로 테스트를 평가한다."""
     random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
     tok = AutoTokenizer.from_pretrained(model_name)
@@ -66,13 +66,16 @@ def train_absa(train, val, test, model_name='klue/roberta-base', epochs=5, lr=3e
     tr = _loader(tok, [(t, to_labels(g)) for t, g in train], True, bs)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=C.WEIGHT_DECAY)
     sched = get_linear_schedule_with_warmup(opt, int(0.1 * epochs * len(tr)), epochs * len(tr))
+    # 대부분의 (속성, 리뷰) 칸이 '미언급'이라 그대로 학습하면 전부 미언급으로 답하는 쪽으로 무너진다 → 드문 클래스에 가중치
+    counts = np.bincount([y for _, g in train for y in to_labels(g)], minlength=len(CLASSES)).astype(float) + 1.0
+    weight = torch.tensor((counts.sum() / (len(CLASSES) * counts)) ** 0.5, dtype=torch.float).to(DEVICE)
     best, best_state = -1.0, None
     for ep in range(1, epochs + 1):
         model.train()
         for batch in tqdm(tr, desc=f'epoch {ep}', leave=False):
             batch = {k: v.to(DEVICE) for k, v in batch.items()}
             y = batch.pop('labels')
-            loss = nn.functional.cross_entropy(model(**batch).reshape(-1, len(CLASSES)), y.reshape(-1))
+            loss = nn.functional.cross_entropy(model(**batch).reshape(-1, len(CLASSES)), y.reshape(-1), weight=weight)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step(); sched.step(); opt.zero_grad(set_to_none=True)
