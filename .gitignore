@@ -1,4 +1,5 @@
 .venv/
+.venv-llm/
 __pycache__/
 .env
 *.pyc
@@ -7,3 +8,7 @@ models/
 
 # 실제 후기를 받아 적은 내부 자료: 올리거나 공유하지 않는다
 private/
+
+# AI Hub 원본 데이터: 재배포 조건이 있어 올리지 않는다
+aihub_dataset/
+aihub_work/

@@ -1,0 +1,22 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LoRA vs Gemini 비교</title>
+<style>:root{--bg:#fff;--fg:#1c1c1e;--mut:#6b6b70;--line:#e2e2e6;--best:#e3f3e6}
+@media(prefers-color-scheme:dark){:root{--bg:#16161a;--fg:#ececf0;--mut:#9a9aa2;--line:#33333a;--best:#1f3a27}}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,'Malgun Gothic',sans-serif;max-width:900px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px}h2{font-size:17px;margin-top:32px}p,li{color:var(--mut)}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-size:14px}th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}
+th:first-child,tr>th{text-align:left}td.best{background:var(--best);font-weight:600}</style>
+<h1>EXAONE-3.5-2.4B LoRA vs Gemini</h1>
+<p>ABSA(속성별 감성 추출) 비교. 로컬 GPU에서 학습·추론했고 이 화면에는 실제 후기 원문이 없습니다. 초록 칸이 열 최고값(극성반전율은 낮을수록 좋음).</p>
+<h2>1. 평가용 합성 리뷰 500건</h2>
+<p>학습 세트와 시드·문구가 겹치지 않는 평가 전용 세트. 정답은 생성 지시서입니다. LoRA v1은 이 평가셋과 같은 방식(v2)의 합성으로 학습해서 유리하고, Gemini 행은 같은 모델이 쓰고 다시 읽은 값이라 참고용입니다. 실제 후기 성능이 아닙니다.</p>
+<table><tr><th>모델</th><th>탐지_F1</th><th>탐지_정밀도</th><th>탐지_재현율</th><th>감성일치율</th><th>극성반전율</th><th>완전일치</th></tr><tr><th>Gemini 재추출</th><td class="">0.918</td><td class="">0.903</td><td class="">0.933</td><td class="best">0.926</td><td class="">0.010</td><td class="">0.708</td></tr><tr><th>LoRA v0 (합성v1+영어)</th><td class="">0.939</td><td class="">0.913</td><td class="">0.967</td><td class="">0.912</td><td class="best">0.023</td><td class="">0.716</td></tr><tr><th>LoRA v1 (합성v1+v2+영어)</th><td class="best">0.967</td><td class="best">0.962</td><td class="best">0.971</td><td class="">0.915</td><td class="">0.021</td><td class="best">0.794</td></tr></table>
+<h3>Gemini 재추출이 지시서와 일치한 부분집합 354건 (더 낙관적)</h3>
+<table><tr><th>모델</th><th>탐지_F1</th><th>탐지_정밀도</th><th>탐지_재현율</th><th>감성일치율</th><th>극성반전율</th><th>완전일치</th></tr><tr><th>LoRA v0 (합성v1+영어)</th><td class="">0.968</td><td class="">0.950</td><td class="">0.986</td><td class="best">0.974</td><td class="best">0.012</td><td class="">0.870</td></tr><tr><th>LoRA v1 (합성v1+v2+영어)</th><td class="best">0.992</td><td class="best">0.993</td><td class="best">0.991</td><td class="best">0.974</td><td class="">0.009</td><td class="best">0.941</td></tr></table>
+<h3>속성별 탐지 F1 (전체)</h3>
+<table><tr><th>속성</th><th>Gemini 재추출</th><th>LoRA v0 (합성v1+영어)</th><th>LoRA v1 (합성v1+v2+영어)</th></tr><tr><th>재질·촉감</th><td>0.95</td><td>0.95</td><td>0.97</td></tr><tr><th>사이즈·핏</th><td>0.95</td><td>0.89</td><td>0.97</td></tr><tr><th>색상·디자인</th><td>0.86</td><td>0.88</td><td>0.93</td></tr><tr><th>품질·내구성</th><td>0.84</td><td>0.90</td><td>0.94</td></tr><tr><th>가격·가성비</th><td>0.98</td><td>0.98</td><td>0.98</td></tr><tr><th>냄새</th><td>0.96</td><td>0.98</td><td>0.99</td></tr><tr><th>세탁·관리</th><td>0.91</td><td>0.98</td><td>0.98</td></tr><tr><th>배송</th><td>0.93</td><td>0.97</td><td>0.97</td></tr><tr><th>포장</th><td>0.86</td><td>0.94</td><td>0.94</td></tr><tr><th>교환·환불·CS</th><td>0.97</td><td>0.99</td><td>0.99</td></tr></table>
+<h2>2. 사람이 라벨한 실제 후기 11건</h2>
+<p>내부 평가셋(원문 비공개, 지표만 표시). 표본이 적어 속성 하나만 달라져도 F1이 0.1 이상 움직입니다. 순위의 근거로는 약합니다. 정답은 2026-10-12 수정본 기준입니다.</p>
+<table><tr><th>모델</th><th>탐지_F1</th><th>탐지_정밀도</th><th>탐지_재현율</th><th>감성일치율</th><th>극성반전율</th><th>완전일치</th></tr><tr><th>Gemini 재추출</th><td class="best">0.977</td><td class="best">0.955</td><td class="best">1.000</td><td class="best">0.952</td><td class="best">0.000</td><td class="best">0.909</td></tr><tr><th>LoRA v0 (합성v1+영어)</th><td class="">0.889</td><td class="">0.833</td><td class="">0.952</td><td class="">0.950</td><td class="best">0.000</td><td class="">0.727</td></tr><tr><th>LoRA v1 (합성v1+v2+영어)</th><td class="">0.818</td><td class="">0.783</td><td class="">0.857</td><td class="">0.944</td><td class="best">0.000</td><td class="">0.545</td></tr></table>
+<h2>메모</h2><ul><li>LoRA: r=16, 2에폭, 한글 합성 + 영어 아마존(Gemini 라벨). 사람 평가셋은 학습에 쓰지 않았습니다.</li>
+<li>가장 시급한 일은 실제 후기 평가셋을 늘리는 것입니다.</li></ul></html>
